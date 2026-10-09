@@ -1360,7 +1360,7 @@ async function loadSettingsView() {
   $('dayStart').value = state.settings.day_start;
   $('dayEnd').value = state.settings.day_end;
   $('complexNameInput').value = state.settings.complex_name ?? '';
-  renderTelegramState();
+  renderMessengerState();
   renderBackups(backups);
 }
 
@@ -1672,7 +1672,7 @@ $('saveWork').addEventListener('click', async () => {
     const s = await api('/api/settings');
     state.settings = s.settings;
     $('complexName').textContent = s.settings.complex_name;
-    renderTelegramState();
+    renderMessengerState();
   } catch (err) {
     toast(err.message, 'error');
   }
@@ -1719,6 +1719,7 @@ function renderBackups(data) {
   box.append(list);
 }
 
+
 $('backupNow').addEventListener('click', async () => {
   try {
     const r = await api('/api/backups', { method: 'POST' });
@@ -1729,74 +1730,155 @@ $('backupNow').addEventListener('click', async () => {
   }
 });
 
-// ────────────────────────  تلگرام  ────────────────────────
+// ────────────────────────  بله  ────────────────────────
 
 /**
- * نشان دادن وضعیت ذخیرهٔ توکن.
+ * ارسال پشتیبان فقط با بله انجام می‌شود. تلگرام قبلاً هم بود و حذف شد:
+ * آی‌پی‌های تلگرام در ایران فیلتر است و Node اصلاً به آن وصل نمی‌شود
+ * (مرورگر می‌تواند چون از پروکسی سیستم رد می‌شود، ولی Node فقط
+ * متغیرهای محیطی خودش را می‌خواند).
+ */
+const BALE = {
+  label: 'بله',
+  father: 'ربات @BotFather در بله',
+  link: 'https://ble.ir/botfather',
+};
+
+/** ساخت فرم بله؛ رویدادهایش هم همان لحظه وصل می‌شوند */
+function buildBaleForm() {
+  const wrap = el('div');
+  wrap.style.cssText = 'padding:12px 0;border-top:1px solid var(--line)';
+
+  const head = el('div');
+  head.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:10px';
+  const title = el('strong', null, BALE.label);
+  const badge = el('span', 'field__hint', 'ذخیره نشده است');
+  badge.id = 'blState';
+  badge.style.marginInlineStart = 'auto';
+  head.append(title, badge);
+  wrap.append(head);
+
+  const token = el('input', 'input');
+  token.type = 'password';
+  token.id = 'blToken';
+  token.dir = 'ltr';
+  token.autocomplete = 'off';
+  token.spellcheck = false;
+  token.placeholder = '۱۲۳۴۵۶۷۸۹:AA...';
+  wrap.append(wrapField(`${BALE.label} — توکن ربات`, token));
+
+  const chat = el('input', 'input');
+  chat.type = 'text';
+  chat.id = 'blChat';
+  chat.dir = 'ltr';
+  chat.inputMode = 'numeric';
+  chat.autocomplete = 'off';
+  chat.placeholder = '۱۲۳۴۵۶۷۸۹';
+  wrap.append(wrapField(`${BALE.label} — شناسهٔ گفت‌وگو`, chat));
+
+  const hint = el('p', 'field__hint');
+  hint.innerHTML = `ربات را از <a href="${BALE.link}" target="_blank" rel="noopener">${BALE.father}</a> `
+    + 'بسازید، توکن را بگذارید، یک پیام به ربات بدهید و «خواندن شناسه» را بزنید.';
+  wrap.append(hint);
+
+  const row = el('div', 'row-2');
+  row.style.marginTop = '10px';
+  const check = el('button', 'btn btn--ghost', 'بررسی توکن');
+  const discover = el('button', 'btn btn--ghost', 'خواندن شناسه');
+  row.append(check, discover);
+  wrap.append(row);
+
+  const save = el('button', 'btn btn--primary btn--block', 'ذخیره و ارسال پیام آزمایشی');
+  save.style.marginTop = '10px';
+  wrap.append(save);
+
+  check.addEventListener('click', () => checkBaleToken(token.value.trim()));
+  discover.addEventListener('click', () => discoverBaleChat(token.value.trim()));
+  save.addEventListener('click', () => saveBale(token, chat, badge));
+
+  return wrap;
+}
+
+function buildMessengerForms() {
+  const box = $('messengerForms');
+  if (box.childElementCount) return; // یک‌بار می‌سازیم، نه با هر بارگذاری
+  box.innerHTML = '';
+  box.append(buildBaleForm());
+}
+
+// فرم همین‌جا ساخته می‌شود و نه بالاتر. const بالا نمی‌رود و تا خط
+// خودش اجرا نشود در ناحیهٔ مرده است؛ فراخوانیِ زودتر یعنی
+// «Cannot access 'BALE' before initialization» و کل صفحه می‌میرد.
+buildMessengerForms();
+
+/**
+ * نشان دادن وضعیت ذخیرهٔ بله.
  * سرور توکن را هرگز نمی‌فرستد — فقط می‌گوید پر است یا نه — پس این
  * تنها چیزی است که اینجا قابل نمایش است.
  */
-function renderTelegramState() {
-  const set = state.settings?.tg_token_set;
-  $('tgTokenState').textContent = set
-    ? 'توکن ذخیره شده است. برای تغییرش، مقدار تازه را وارد و ذخیره کنید.'
-    : 'ذخیره نشده است.';
-  $('tgChat').value = state.settings?.tg_chat_id ?? '';
+function renderMessengerState() {
+  const badge = $('blState');
+  if (!badge) return;
+  badge.textContent = state.settings?.bl_token_set
+    ? 'ذخیره شده است'
+    : 'ذخیره نشده است';
+  const chat = $('blChat');
+  // اگر کاربر چیزی در کادر نوشته، زیرنویس نشود
+  if (chat && document.activeElement !== chat) {
+    chat.value = state.settings?.bl_chat_id ?? '';
+  }
 }
 
-/** ذخیرهٔ توکن و شناسه، و بعد فرستادن پیام آزمایشی */
-$('tgSave').addEventListener('click', async () => {
-  const token = $('tgToken').value.trim();
-  const chat = $('tgChat').value.trim();
+async function saveBale(tokenInput, chatInput, badge) {
+  const token = tokenInput.value.trim();
+  const chat = chatInput.value.trim();
 
-  if (!token && !chat) { toast('توکن و شناسه را وارد کنید.', 'error'); return; }
-  if (!token) { toast('توکن ربات را وارد کنید.', 'error'); return; }
-  if (!chat) { toast('شناسهٔ گفت‌وگو را وارد کنید.', 'error'); return; }
+  if (!token) { toast(`توکن ربات ${BALE.label} را وارد کنید.`, 'error'); return; }
+  if (!chat) { toast(`شناسهٔ گفت‌وگوی ${BALE.label} را وارد کنید.`, 'error'); return; }
 
   try {
-    // توکن خالی یعنی «نگه دار»، نه «پاک کن»؛ وگرنه مدیر برای عوض‌کردن
-    // فقط شناسه، ناچار می‌شد توکن را دوباره بگیرد که در دسترسش نیست.
     await api('/api/settings', {
       method: 'PUT',
-      body: { tg_token: token, tg_chat_id: chat },
+      body: { bl_token: token, bl_chat_id: chat },
     });
 
     state.settings = (await api('/api/settings')).settings;
-    await api('/api/telegram/test', { method: 'POST' });
+    await api('/api/messenger/test', { method: 'POST' });
 
-    $('tgToken').value = '';
-    $('tgTokenState').textContent = 'توکن ذخیره شد و پیام آزمایشی فرستاده شد.';
-    toast('تلگرام تنظیم شد — پیام آزمایشی را ببینید.', 'ok');
+    tokenInput.value = '';
+    badge.textContent = 'ذخیره شد و پیام آزمایشی فرستاده شد';
+    toast(`${BALE.label} تنظیم شد — پیام آزمایشی را ببینید.`, 'ok');
   } catch (err) {
     toast(err.message, 'error');
   }
-});
+}
 
-$('tgCheck').addEventListener('click', async () => {
-  const token = $('tgToken').value.trim();
-  if (!token) { toast('توکن را وارد کنید یا اگر ذخیره شده، بگویید بررسی شود.', 'error'); return; }
+async function checkBaleToken(token) {
+  if (!token) {
+    toast(`توکن ${BALE.label} را وارد کنید؛ اگر ذخیره شده، همان را بفرستید.`, 'error');
+    return;
+  }
   try {
-    // بررسی با توکن واردشده انجام می‌شود و ذخیره نمی‌شود
-    await api('/api/settings', { method: 'PUT', body: { tg_token: token } });
-    const r = await api('/api/telegram/check', { method: 'POST' });
+    // توکن را در بدنه می‌فرستیم تا ذخیره نشود؛ بررسی نباید چیزی را عوض کند
+    const r = await api('/api/messenger/check', { method: 'POST', body: { token } });
     toast(`توکن سالم است — ربات: @${r.username}`, 'ok');
   } catch (err) {
     toast(err.message, 'error');
   }
-});
+}
 
-$('tgDiscover').addEventListener('click', async () => {
+async function discoverBaleChat(token) {
   try {
-    const token = $('tgToken').value.trim();
-    // اگر چیزی در کادر نیست، از توکن ذخیره‌شده استفاده می‌شود
-    if (token) await api('/api/settings', { method: 'PUT', body: { tg_token: token } });
-    const r = await api('/api/telegram/discover', { method: 'POST' });
-    $('tgChat').value = r.chatId;
-    toast(`شناسهٔ گفت‌وگوی «${r.title}» خوانده شد. ذخیره کنید.`, 'ok');
+    // اگر چیزی در کادر نیست، سرور از توکن ذخیره‌شده استفاده می‌کند
+    const r = await api('/api/messenger/discover', {
+      method: 'POST', body: token ? { token } : {},
+    });
+    $('blChat').value = r.chatId;
+    toast(`شناسهٔ «${r.title}» خوانده شد. حالا ذخیره کنید.`, 'ok');
   } catch (err) {
     toast(err.message, 'error');
   }
-});
+}
 
 /**
  * بازگردانی پشتیبان.

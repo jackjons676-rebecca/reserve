@@ -37,8 +37,8 @@ import {
 } from './src/jalali.js';
 import { buildExcelReport, EXCEL_KINDS } from './src/excel-reports.js';
 import {
-  sendDocument, sendMessage, telegramConfigured, discoverChatId, checkToken,
-} from './src/telegram.js';
+  configured as baleConfigured, sendDocument, sendMessage, discoverChatId, checkToken,
+} from './src/bale.js';
 
 const ROOT = resolve(fileURLToPath(new URL('.', import.meta.url)));
 const PUBLIC_DIR = join(ROOT, 'public');
@@ -720,10 +720,12 @@ route('GET', '/api/settings', () => ({
   statuses: STATUS_LABELS,
 }), { admin: true });
 
-/** توکن ربات یک راز است — فقط نشانهٔ پر بودنش بیرون می‌رود */
+/**
+ * توکن ربات یک راز است — فقط نشانهٔ پر بودنش بیرون می‌رود.
+ * مدیر باید بتواند بقیهٔ تنظیمات را ببیند بدون اینکه توکنش هم لو برود.
+ */
 function maskToken(settings) {
-  const { tg_token: token, ...rest } = settings;
-  return { ...rest, tg_token_set: Boolean(token) };
+  return { ...settings, bl_token: undefined, bl_token_set: Boolean(settings.bl_token) };
 }
 
 /**
@@ -751,20 +753,22 @@ route('PUT', '/api/settings', async (req) => {
     } else if (key === 'day_start' || key === 'day_end') {
       if (!/^\d{2}:\d{2}$/.test(v)) throw new HttpError(400, 'ساعت باید به شکل ساعت:دقیقه باشد.');
       setSetting(db, key, v);
-    } else if (key === 'tg_token') {
-      // توکن ربات قالب مشخصی دارد؛ چیز دیگری را نمی‌پذیریم تا
-      // آدرس اشتباه به‌جای «تلگرام: توکن نامعتبر» خطای عجیب ندهد.
-      if (v && !/^\d{6,}:[A-Za-z0-9_-]{30,}$/.test(v)) {
-        throw new HttpError(400, 'توکن ربات درست نیست. قالب آن ۱۰ رقم، دونقطه و حروف است.');
-      }
-      setSetting(db, key, v);
-    } else if (key === 'tg_chat_id') {
-      // شناسهٔ چت تلگرام همیشه عدد است و می‌تواند منفی باشد
-      if (v && !/^-?\d+$/.test(v)) throw new HttpError(400, 'شناسهٔ گفت‌وگو باید عدد باشد.');
-      setSetting(db, key, v);
     } else {
-      if (v.length > 200) throw new HttpError(400, 'مقدار خیلی طولانی است.');
-      setSetting(db, key, v);
+      if (key === 'bl_token') {
+        // توکن ربات قالب مشخصی دارد؛ چیز دیگری را نمی‌پذیریم تا
+        // آدرس اشتباه به‌جای خطای گنگ سرویس، پیام روشن بدهد.
+        if (v && !/^\d{6,}:[A-Za-z0-9_-]{30,}$/.test(v)) {
+          throw new HttpError(400, 'توکن ربات درست نیست. قالب آن چند رقم، دونقطه و حروف است.');
+        }
+        setSetting(db, key, v);
+      } else if (key === 'bl_chat_id') {
+        // شناسهٔ چت همیشه عدد است و می‌تواند منفی باشد
+        if (v && !/^-?\d+$/.test(v)) throw new HttpError(400, 'شناسهٔ گفت‌وگو باید عدد باشد.');
+        setSetting(db, key, v);
+      } else {
+        if (v.length > 200) throw new HttpError(400, 'مقدار خیلی طولانی است.');
+        setSetting(db, key, v);
+      }
     }
   }
 
@@ -800,16 +804,16 @@ route('POST', '/api/backups', () => {
   return { ok: true, name };
 }, { admin: true });
 
-// ────────────────────────  تلگرام: آزمون و خواندن شناسه  ────────────────────────
+// ──────────────────  بله: آزمون، شناسه، ارسال  ──────────────────
 
 /**
  * فرستادن یک پیام آزمایشی. برای اینکه مدیر قبل از سپردن به بکاپ روزانه
  * مطمئن شود توکن و شناسه درست‌اند — یک پیام ساده سریع‌تر از بکاپ کامل است.
  */
-route('POST', '/api/telegram/test', async () => {
+route('POST', '/api/messenger/test', async () => {
   const settings = allSettings(db);
-  if (!telegramConfigured(settings)) {
-    throw new HttpError(400, 'توکن ربات و شناسهٔ گفت‌وگو را وارد کنید.');
+  if (!baleConfigured(settings)) {
+    throw new HttpError(400, 'توکن ربات و شناسهٔ گفت‌وگوی «بله» را وارد کنید.');
   }
 
   const j = jalaliFromISO(todayISO());
@@ -825,40 +829,52 @@ route('POST', '/api/telegram/test', async () => {
  * کاربر نمی‌تواند این شناسه را خودش از روی گوشی پیدا کند؛ این مسیر
  * دقیقاً همان کار را برایش می‌کند.
  */
-route('POST', '/api/telegram/discover', async () => {
-  const token = allSettings(db).tg_token;
-  return discoverChatId(token);
+route('POST', '/api/messenger/discover', async (req) => {
+  // توکن می‌تواند در بدنه بیاید (تازه واردشده) وگرنه از تنظیمات خوانده می‌شود
+  const { token } = await readBody(req);
+  return discoverChatId(token || allSettings(db).bl_token);
 }, { admin: true });
 
 /** بررسی سالم بودن توکن، بدون فرستادن پیام به کسی */
-route('POST', '/api/telegram/check', async () => checkToken(allSettings(db).tg_token),
-  { admin: true });
+route('POST', '/api/messenger/check', async (req) => {
+  const { token } = await readBody(req);
+  return checkToken(token || allSettings(db).bl_token);
+}, { admin: true });
 
-/** ارسال یک بکاپ موجود به تلگرام — برای فرستادن دستی همین حالا */
-route('POST', '/api/telegram/send-backup', async (req) => {
-  const { name } = await readBody(req);
+/**
+ * ارسال یک بکاپ موجود به بله — برای فرستادن دستی همین حالا.
+ */
+route('POST', '/api/messenger/send-backup', async (req) => {
   const settings = allSettings(db);
-  if (!telegramConfigured(settings)) {
-    throw new HttpError(400, 'تلگرام تنظیم نشده است.');
+  if (!baleConfigured(settings)) {
+    throw new HttpError(400, 'بله تنظیم نشده است.');
   }
 
-  // نام فایل از سمت کاربر می‌آید، پس باید بیرون از پوشهٔ بکاپ را رد کرد.
-  // بدون این بررسی، مسیرهایی مثل ../../etc/passwd خوانده می‌شدند.
+  const { name } = await readBody(req);
+  const data = readBackupFile(name);
+
+  const j = jalaliFromISO(todayISO());
+  await sendDocument(settings, data, name,
+    `پشتیبان دستی — ${jalaliMonthName(j.jm)} ${j.jy}\n`
+    + `${data.length.toLocaleString('fa-IR')} بایت — ${name}`);
+
+  return { ok: true, name };
+}, { admin: true });
+
+/**
+ * خواندن یک فایل پشتیبان با نام داده‌شده از سمت کاربر.
+ * نام از بیرون می‌آید، پس باید بیرون از پوشهٔ بکاپ را رد کرد؛
+ * بدون این بررسی مسیرهایی مثل ../../etc/passwd خوانده می‌شدند.
+ */
+function readBackupFile(name) {
   const safe = String(name ?? '');
   if (!/^reserve-[\w.-]+\.db$/.test(safe) || safe.includes('..')) {
     throw new HttpError(400, 'نام فایل پشتیبان نامعتبر است.');
   }
   const path = join(BACKUP_DIR, safe);
   if (!existsSync(path)) throw new HttpError(404, 'فایل پشتیبان پیدا نشد.');
-
-  const data = readFileSync(path);
-  const j = jalaliFromISO(todayISO());
-  await sendDocument(settings, data, safe,
-    `پشتیبان دستی — ${jalaliMonthName(j.jm)} ${j.jy}\n`
-    + `${data.length.toLocaleString('fa-IR')} بایت — ${safe}`);
-
-  return { ok: true, name: safe };
-}, { admin: true });
+  return readFileSync(path);
+}
 
 /** کپی سازگار از پایگاه‌داده با استفاده از دستور VACUUM INTO */
 function makeBackup(suffix = '') {
@@ -1154,10 +1170,10 @@ setInterval(() => {
   try {
     const name = makeBackup();
     console.log('پشتیبان‌گیری خودکار:', name);
-    // ارسال بیرون از مسیر پشتیبان‌گیری عمداً است: تلگرام ممکن است
+    // ارسال بیرون از مسیر پشتیبان‌گیری عمداً است: بله ممکن است
     // کند یا قطع باشد و نباید باعث شود بکاپ شمرده نشود.
-    sendBackupToTelegram(name).catch((err) =>
-      console.error('ارسال بکاپ به تلگرام ناموفق بود:', err.message));
+    sendBackupToBale(name).catch((err) =>
+      console.error('ارسال بکاپ ناموفق بود:', err.message));
   } catch (err) {
     console.error('پشتیبان‌گیری خودکار ناموفق بود:', err.message);
   }
@@ -1171,24 +1187,28 @@ try {
 }
 
 /**
- * فرستادن یک فایل پشتیبان به تلگرام.
- * تنظیم‌نشدن تلگرام خطا نیست — یعنی مدیر هنوز خواسته روشن نکرده.
+ * فرستادن یک فایل پشتیبان به بله.
+ * تنظیم‌نشدنش خطا نیست — یعنی مدیر هنوز خواسته روشن نکرده.
  * @param {string} name نام فایل داخل پوشهٔ backups
  */
-async function sendBackupToTelegram(name) {
+async function sendBackupToBale(name) {
   const settings = allSettings(db);
-  if (!telegramConfigured(settings)) return false;
+  if (!baleConfigured(settings)) return null;
 
-  const path = join(BACKUP_DIR, name);
-  const data = readFileSync(path);
+  const data = readBackupFile(name);
   const j = jalaliFromISO(todayISO());
   const caption =
     `پشتیبان خودکار — ${jalaliMonthName(j.jm)} ${j.jy}\n`
     + `${data.length.toLocaleString('fa-IR')} بایت — ${name}`;
 
-  await sendDocument(settings, data, name, caption);
-  console.log('بکاپ به تلگرام ارسال شد:', name);
-  return true;
+  try {
+    await sendDocument(settings, data, name, caption);
+    console.log('بکاپ به بله ارسال شد:', name);
+    return { ok: true, name };
+  } catch (err) {
+    console.error('ارسال بکاپ به بله ناموفق بود:', err.message);
+    return { ok: false, name, error: err.message };
+  }
 }
 
 server.listen(PORT, HOST, () => {

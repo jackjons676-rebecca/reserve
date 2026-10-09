@@ -295,3 +295,82 @@ test('نگاشت تقویم با نام فیلدهای API هم‌نام است'
   assert.ok(!/\$\{b\.hall_id\}/.test(appJs),
     'تقویم نباید از نام ستون پایگاه‌داده استفاده کند');
 });
+
+/**
+ * ارسال پشتیبان فقط با بله است. این تست ثابت می‌کند که هیچ اثری
+ * از تلگرام در کد نمانده — یک رشتهٔ تلگرام جا مانده یعنی فرمی که
+ * سرورش وجود ندارد و یک ۴۰۴ برای کاربر می‌سازد.
+ *
+ * توضیح «چرا حذف شد» در کامنت می‌ماند و عمداً بررسی نمی‌شود؛
+ * این تست کد را می‌سنجد نه حاشیه‌نویسی را.
+ */
+test('تلگرام از کد حذف شده و فقط بله مانده', () => {
+  // خط‌های کامنتی و رشته‌های خالی کنار گذاشته می‌شوند
+  const code = appJs.split('\n')
+    .filter((l) => !/^\s*(\/\*|\*|\/\/)/.test(l))
+    .join('\n');
+  assert.ok(!/telegram|t\.me|tg_token|tg_chat/i.test(code), 'تلگرام نباید در کد باشد');
+  assert.ok(!/telegram|t\.me/i.test(html), 'تلگرام نباید در index.html باشد');
+
+  assert.match(appJs, /const BALE = \{/, 'شیء BALE باید تعریف شده باشد');
+  assert.match(appJs, /label: 'بله'/);
+});
+
+test('نام بله و کلیدهای تنظیمش با سرور یکی است', async () => {
+  const { DEFAULT_SETTINGS } = await import('../src/db.js');
+  const { configured } = await import('../src/bale.js');
+
+  // ماژول سرور فقط bl_token و bl_chat_id را می‌شناسد؛ اگر رابط کاربری
+  // کلید دیگری بفرستد، بی‌صدا نادیده گرفته می‌شود و مدیر فکر می‌کند ذخیره شد.
+  assert.ok('bl_token' in DEFAULT_SETTINGS, 'bl_token باید در پیش‌فرض‌ها باشد');
+  assert.ok('bl_chat_id' in DEFAULT_SETTINGS, 'bl_chat_id باید در پیش‌فرض‌ها باشد');
+  assert.ok(configured({ bl_token: 't', bl_chat_id: 'c' }));
+  assert.ok(!configured({ bl_token: 't' }), 'بدون شناسهٔ گفت‌وگو آماده نیست');
+
+  // شناسه‌های DOM در app.js ساخته می‌شوند و باید به همین کلیدها بخورند
+  for (const id of ['blState', 'blToken', 'blChat']) {
+    assert.match(appJs, new RegExp(`id = '${id}'`), `${id} باید ساخته شود`);
+  }
+});
+
+test('هر پیام‌رسان جایی برای گفتن کدام‌ها آماده‌اند دارد', () => {
+  // بدون این بررسی، اگر نشانگر حذف شود کاربر هیچ راهنمایی نمی‌بیند
+  assert.match(appJs, /bl_token_set/);
+});
+
+/**
+ * باگ واقعی: const در جاوااسکریپت بالا نمی‌رود. اگر فراخوانی تابعی
+ * قبل از خط تعریف یک const بیاید، کل فایل در لحظهٔ اجرا می‌میرد با
+ * «Cannot access ... before initialization» و صفحه بالا نمی‌آید.
+ * این تست جلوی برگشتش را می‌گیرد.
+ */
+test('هیچ فراخوانی زودهنگامی روی const تعریف‌نشدهٔ سراسری نیست', () => {
+  // نام هر const سراسری و خطی که روی آن مقدار می‌گیرد
+  const decls = [...appJs.matchAll(/^const (\w+)\s*=/gm)].map((m) => m[1]);
+
+  // فراخوانی‌های سطح بالا: یعنی فراخوانی‌ای که داخل تابع نیست
+  const callSites = [...appJs.matchAll(/^(\w+)\(\);?$/gm)].map((m) => m[1]);
+
+  for (const name of new Set(callSites)) {
+    const line = appJs.split('\n').findIndex((l) => l.trim() === `${name}();`) + 1;
+    const declLine = appJs.split('\n').findIndex((l) =>
+      new RegExp(`^const ${name}\\s*=`).test(l)) + 1;
+
+    // فراخوانی سطح‌بالا لزوماً const نیست؛ بیشترشان توابع‌اند که بالا
+    // می‌روند و بی‌خطرند. فقط آنهایی بررسی می‌شوند که واقعاً const تعریف شده‌اند.
+    if (!decls.includes(name)) continue;
+    assert.ok(declLine > 0, `تعریف ${name} پیدا نشد`);
+    assert.ok(line > declLine,
+      `${name}() در خط ${line} صدا زده شده ولی تعریفش خط ${declLine} است — `
+      + 'const بالا نمی‌رود و صفحه می‌میرد');
+  }
+});
+
+test('ترتیب ساخت فرم بله درست است', () => {
+  const decl = appJs.indexOf('const BALE = {');
+  const call = appJs.indexOf('buildMessengerForms();');
+  assert.ok(decl >= 0, 'BALE باید تعریف شده باشد');
+  assert.ok(call >= 0, 'ساخت فرم باید فراخوانی شود');
+  assert.ok(call > decl,
+    'ساخت فرم باید بعد از تعریف BALE باشد نه قبل از آن');
+});
