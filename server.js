@@ -7,7 +7,7 @@ import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import {
   createReadStream, existsSync, mkdirSync, copyFileSync, readdirSync, statSync,
-  unlinkSync, writeFileSync, renameSync,
+  unlinkSync, writeFileSync, renameSync, readFileSync,
 } from 'node:fs';
 import { extname, join, resolve, normalize, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -33,9 +33,12 @@ import {
 import { buildWorkbook } from './src/xlsx.js';
 import {
   jalaliFromISO, isoFromJalali, jalaliMonthDays, jalaliMonthLength,
-  todayISO, JAL_MONTHS, WEEKDAYS,
+  jalaliMonthName, todayISO, JAL_MONTHS, WEEKDAYS,
 } from './src/jalali.js';
 import { buildExcelReport, EXCEL_KINDS } from './src/excel-reports.js';
+import {
+  sendDocument, sendMessage, telegramConfigured, discoverChatId, checkToken,
+} from './src/telegram.js';
 
 const ROOT = resolve(fileURLToPath(new URL('.', import.meta.url)));
 const PUBLIC_DIR = join(ROOT, 'public');
@@ -708,11 +711,20 @@ route('GET', '/api/export/:report', (req, res, ctx) => {
 // ────────────────────────────  تنظیمات  ────────────────────────────
 
 route('GET', '/api/settings', () => ({
-  settings: allSettings(db),
+  // توکن ربات از پاسخ بیرون می‌ماند و به‌جایش فقط «پر شده یا نه»
+  // می‌رود؛ فرم تنظیمات با همان پر بودن کار می‌کند و لازم نیست
+  // مدیر برای دیدن بقیهٔ تنظیمات، توکنش را هم بگیرد.
+  settings: maskToken(allSettings(db)),
   defaults: DEFAULT_SETTINGS,
   kinds: listKinds(db),
   statuses: STATUS_LABELS,
 }), { admin: true });
+
+/** توکن ربات یک راز است — فقط نشانهٔ پر بودنش بیرون می‌رود */
+function maskToken(settings) {
+  const { tg_token: token, ...rest } = settings;
+  return { ...rest, tg_token_set: Boolean(token) };
+}
 
 /**
  * فهرست نوع‌ها و وضعیت‌ها — فرم رزرو برای هر دو نقش به آن نیاز دارد،
@@ -739,6 +751,17 @@ route('PUT', '/api/settings', async (req) => {
     } else if (key === 'day_start' || key === 'day_end') {
       if (!/^\d{2}:\d{2}$/.test(v)) throw new HttpError(400, 'ساعت باید به شکل ساعت:دقیقه باشد.');
       setSetting(db, key, v);
+    } else if (key === 'tg_token') {
+      // توکن ربات قالب مشخصی دارد؛ چیز دیگری را نمی‌پذیریم تا
+      // آدرس اشتباه به‌جای «تلگرام: توکن نامعتبر» خطای عجیب ندهد.
+      if (v && !/^\d{6,}:[A-Za-z0-9_-]{30,}$/.test(v)) {
+        throw new HttpError(400, 'توکن ربات درست نیست. قالب آن ۱۰ رقم، دونقطه و حروف است.');
+      }
+      setSetting(db, key, v);
+    } else if (key === 'tg_chat_id') {
+      // شناسهٔ چت تلگرام همیشه عدد است و می‌تواند منفی باشد
+      if (v && !/^-?\d+$/.test(v)) throw new HttpError(400, 'شناسهٔ گفت‌وگو باید عدد باشد.');
+      setSetting(db, key, v);
     } else {
       if (v.length > 200) throw new HttpError(400, 'مقدار خیلی طولانی است.');
       setSetting(db, key, v);
@@ -749,7 +772,7 @@ route('PUT', '/api/settings', async (req) => {
   const win = workWindow(s);
   if (!win) throw new HttpError(400, 'ساعت پایان باید بعد از ساعت شروع باشد.');
 
-  return { ok: true, settings: s };
+  return { ok: true, settings: maskToken(s) };
 }, { admin: true });
 
 // تغییر رمز از مسیر /api/me/pin انجام می‌شود (هم برای مدیر هم کاربر عادی).
@@ -775,6 +798,66 @@ function statSyncSafe(p) {
 route('POST', '/api/backups', () => {
   const name = makeBackup();
   return { ok: true, name };
+}, { admin: true });
+
+// ────────────────────────  تلگرام: آزمون و خواندن شناسه  ────────────────────────
+
+/**
+ * فرستادن یک پیام آزمایشی. برای اینکه مدیر قبل از سپردن به بکاپ روزانه
+ * مطمئن شود توکن و شناسه درست‌اند — یک پیام ساده سریع‌تر از بکاپ کامل است.
+ */
+route('POST', '/api/telegram/test', async () => {
+  const settings = allSettings(db);
+  if (!telegramConfigured(settings)) {
+    throw new HttpError(400, 'توکن ربات و شناسهٔ گفت‌وگو را وارد کنید.');
+  }
+
+  const j = jalaliFromISO(todayISO());
+  await sendMessage(settings,
+    `سامانه رزرو سالن‌ها — آزمون ارتباط\n${jalaliMonthName(j.jm)} ${j.jy}\n`
+    + 'از این پس، پشتیبان روزانه همین‌جا فرستاده می‌شود.');
+
+  return { ok: true };
+}, { admin: true });
+
+/**
+ * خواندن شناسهٔ گفت‌وگو از آخرین پیامی که کاربر به ربات داده.
+ * کاربر نمی‌تواند این شناسه را خودش از روی گوشی پیدا کند؛ این مسیر
+ * دقیقاً همان کار را برایش می‌کند.
+ */
+route('POST', '/api/telegram/discover', async () => {
+  const token = allSettings(db).tg_token;
+  return discoverChatId(token);
+}, { admin: true });
+
+/** بررسی سالم بودن توکن، بدون فرستادن پیام به کسی */
+route('POST', '/api/telegram/check', async () => checkToken(allSettings(db).tg_token),
+  { admin: true });
+
+/** ارسال یک بکاپ موجود به تلگرام — برای فرستادن دستی همین حالا */
+route('POST', '/api/telegram/send-backup', async (req) => {
+  const { name } = await readBody(req);
+  const settings = allSettings(db);
+  if (!telegramConfigured(settings)) {
+    throw new HttpError(400, 'تلگرام تنظیم نشده است.');
+  }
+
+  // نام فایل از سمت کاربر می‌آید، پس باید بیرون از پوشهٔ بکاپ را رد کرد.
+  // بدون این بررسی، مسیرهایی مثل ../../etc/passwd خوانده می‌شدند.
+  const safe = String(name ?? '');
+  if (!/^reserve-[\w.-]+\.db$/.test(safe) || safe.includes('..')) {
+    throw new HttpError(400, 'نام فایل پشتیبان نامعتبر است.');
+  }
+  const path = join(BACKUP_DIR, safe);
+  if (!existsSync(path)) throw new HttpError(404, 'فایل پشتیبان پیدا نشد.');
+
+  const data = readFileSync(path);
+  const j = jalaliFromISO(todayISO());
+  await sendDocument(settings, data, safe,
+    `پشتیبان دستی — ${jalaliMonthName(j.jm)} ${j.jy}\n`
+    + `${data.length.toLocaleString('fa-IR')} بایت — ${safe}`);
+
+  return { ok: true, name: safe };
 }, { admin: true });
 
 /** کپی سازگار از پایگاه‌داده با استفاده از دستور VACUUM INTO */
@@ -1071,6 +1154,10 @@ setInterval(() => {
   try {
     const name = makeBackup();
     console.log('پشتیبان‌گیری خودکار:', name);
+    // ارسال بیرون از مسیر پشتیبان‌گیری عمداً است: تلگرام ممکن است
+    // کند یا قطع باشد و نباید باعث شود بکاپ شمرده نشود.
+    sendBackupToTelegram(name).catch((err) =>
+      console.error('ارسال بکاپ به تلگرام ناموفق بود:', err.message));
   } catch (err) {
     console.error('پشتیبان‌گیری خودکار ناموفق بود:', err.message);
   }
@@ -1081,6 +1168,27 @@ try {
   console.log('پشتیبان اولیه:', n);
 } catch (err) {
   console.error('پشتیبان اولیه ناموفق بود:', err.message);
+}
+
+/**
+ * فرستادن یک فایل پشتیبان به تلگرام.
+ * تنظیم‌نشدن تلگرام خطا نیست — یعنی مدیر هنوز خواسته روشن نکرده.
+ * @param {string} name نام فایل داخل پوشهٔ backups
+ */
+async function sendBackupToTelegram(name) {
+  const settings = allSettings(db);
+  if (!telegramConfigured(settings)) return false;
+
+  const path = join(BACKUP_DIR, name);
+  const data = readFileSync(path);
+  const j = jalaliFromISO(todayISO());
+  const caption =
+    `پشتیبان خودکار — ${jalaliMonthName(j.jm)} ${j.jy}\n`
+    + `${data.length.toLocaleString('fa-IR')} بایت — ${name}`;
+
+  await sendDocument(settings, data, name, caption);
+  console.log('بکاپ به تلگرام ارسال شد:', name);
+  return true;
 }
 
 server.listen(PORT, HOST, () => {

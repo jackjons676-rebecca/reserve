@@ -292,6 +292,41 @@
         </button>
 
         <details style="margin-top:14px">
+          <summary style="cursor:pointer;color:var(--ink-soft);font-size:13.5px;padding:6px 0">
+            ارسال به تلگرام
+          </summary>
+          <p class="field__hint" style="margin:8px 0 12px">
+            هر پشتیبان روزانهٔ خودکار، علاوه بر ماندن روی سرور، به تلگرام شما هم فرستاده می‌شود.
+            یک ربات تلگرام بسازید (یا از <span dir="ltr">@BotFather</span> استفاده کنید)،
+            توکنش را اینجا بگذارید، یک پیام به ربات بدهید و «خواندن شناسه» را بزنید.
+          </p>
+
+          <div class="field">
+            <label class="field__label" for="tgToken">توکن ربات</label>
+            <input class="input" type="password" id="tgToken" dir="ltr" autocomplete="off"
+                   placeholder="۱۲۳۴۵۶۷۸۹:AA..." spellcheck="false">
+            <p class="field__hint" id="tgTokenState">ذخیره نشده است.</p>
+          </div>
+
+          <div class="field">
+            <label class="field__label" for="tgChat">شناسهٔ گفت‌وگو</label>
+            <input class="input" type="text" id="tgChat" dir="ltr" inputmode="numeric"
+                   autocomplete="off" placeholder="۱۲۳۴۵۶۷۸۹">
+          </div>
+
+          <div class="row-2">
+            <button class="btn btn--ghost" id="tgCheck">بررسی توکن</button>
+            <button class="btn btn--ghost" id="tgDiscover">خواندن شناسه</button>
+          </div>
+          <button class="btn btn--primary btn--block" id="tgSave" style="margin-top:10px">
+            ذخیره و ارسال پیام آزمایشی
+          </button>
+          <p class="field__hint" style="margin:10px 0 0">
+            روزی یک پیام می‌رود؛ نه هنگام بکاپ دستی.
+          </p>
+        </details>
+
+        <details style="margin-top:14px">
           <summary class="btn btn--ghost btn--block" style="cursor:pointer">بازگردانی از فایل پشتیبان</summary>
           <div style="margin-top:12px">
             <div class="field__hint" style="margin-bottom:10px">

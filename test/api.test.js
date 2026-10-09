@@ -818,6 +818,83 @@ test('خروجی اکسل هم ماه انتخابی را می‌گیرد', asyn
   assert.match(b.headers.get('content-disposition') ?? '', /1405-08/);
 });
 
+// ────────────────────────  تلگرام  ────────────────────────
+
+test('توکن ربات هرگز در پاسخ تنظیمات لو نمی‌رود', async () => {
+  const token = '1234567890:AAFakeTokenForTest_0123456789abcdefgh';
+  const save = await api('/api/settings', {
+    method: 'PUT',
+    body: { tg_token: token, tg_chat_id: '987654321' },
+  });
+  assert.equal(save.status, 200);
+  // نه در پاسخ همان درخواست، نه در بارگذاری بعدی
+  assert.equal(save.body.settings.tg_token, undefined, 'توکن نباید در پاسخ باشد');
+  assert.equal(save.body.settings.tg_token_set, true, 'فقط نشانهٔ پر بودن برود');
+
+  const get = await api('/api/settings');
+  assert.equal(get.body.settings.tg_token, undefined, 'توکن نباید در GET باشد');
+  assert.equal(get.body.settings.tg_token_set, true);
+  assert.equal(get.body.settings.tg_chat_id, '987654321', 'شناسه گفت‌وگو راز نیست');
+});
+
+test('توکن و شناسهٔ نامعتبر رد می‌شوند', async () => {
+  const bad1 = await api('/api/settings', { method: 'PUT', body: { tg_token: 'یک متن دلخواه' } });
+  assert.equal(bad1.status, 400, 'توکن بی‌قالب باید رد شود');
+
+  const bad2 = await api('/api/settings', { method: 'PUT', body: { tg_chat_id: 'خانه' } });
+  assert.equal(bad2.status, 400, 'شناسهٔ غیرعددی باید رد شود');
+
+  // پاک کردن هر دو، تا برای بقیهٔ آزمون‌ها تلگرام فعال نماند
+  const cleared = await api('/api/settings', {
+    method: 'PUT',
+    body: { tg_token: '', tg_chat_id: '' },
+  });
+  assert.equal(cleared.status, 200);
+  assert.equal(cleared.body.settings.tg_token_set, false);
+});
+
+test('آزمون تلگرام بدون تنظیم رد می‌شود، نه اینکه بی‌صدا موفق باشد', async () => {
+  const r = await api('/api/telegram/test', { method: 'POST' });
+  assert.equal(r.status, 400);
+  assert.match(r.body.error, /توکن ربات و شناسهٔ گفت‌وگو را وارد کنید/);
+});
+
+test('ارسال بکاپ، نام فایل از مسیر بیرون را رد می‌کند', async () => {
+  const r = await api('/api/telegram/send-backup', {
+    method: 'POST',
+    body: { name: '../../../etc/passwd' },
+  });
+  // یا ۴۰۰ به‌خاطر قالب نام، یا ۴۰۰ به‌خاطر تلگرام تنظیم نشده —
+  // در هر دو حالت مسیر بیرون نباید خوانده شود
+  assert.ok([400].includes(r.status), `کد ${r.status} باید ۴۰۰ باشد`);
+
+  const abs = await api('/api/telegram/send-backup', {
+    method: 'POST',
+    body: { name: 'reserve-2026.db' },
+  });
+  assert.ok([400, 404].includes(abs.status), `کد ${abs.status} باید ۴۰۰ یا ۴۰۴ باشد`);
+});
+
+test('کاربر عادی به مسیرهای تلگرام دسترسی ندارد', async () => {
+  const saved = token;
+  // ورود با حساب کاربر عادی
+  const login = await fetch(`${BASE}/api/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: 'kindsuser', pin: '2468' }),
+  });
+  const body = await login.json();
+  assert.ok(body.token, 'کاربر عادی باید بتواند وارد شود');
+  token = body.token;
+
+  for (const path of ['/api/telegram/test', '/api/telegram/discover', '/api/telegram/check']) {
+    const r = await api(path, { method: 'POST' });
+    assert.equal(r.status, 403, `${path} باید برای کاربر عادی بسته باشد`);
+  }
+
+  token = saved;
+});
+
 test('خروج', async () => {
   const r = await api('/api/logout', { method: 'POST' });
   assert.equal(r.status, 200);

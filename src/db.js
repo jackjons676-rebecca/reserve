@@ -172,6 +172,9 @@ export const DEFAULT_SETTINGS = {
   day_start: '08:00',
   day_end: '18:00',
   complex_name: 'دانشگاه علوم پزشکی زنجان',
+  // ارسال بکاپ روزانه به تلگرام — هر دو خالی یعنی ارسالی در کار نیست
+  tg_token: '',
+  tg_chat_id: '',
 };
 
 export function getSetting(db, key) {

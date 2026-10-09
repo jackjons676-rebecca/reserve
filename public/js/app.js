@@ -1360,6 +1360,7 @@ async function loadSettingsView() {
   $('dayStart').value = state.settings.day_start;
   $('dayEnd').value = state.settings.day_end;
   $('complexNameInput').value = state.settings.complex_name ?? '';
+  renderTelegramState();
   renderBackups(backups);
 }
 
@@ -1671,6 +1672,7 @@ $('saveWork').addEventListener('click', async () => {
     const s = await api('/api/settings');
     state.settings = s.settings;
     $('complexName').textContent = s.settings.complex_name;
+    renderTelegramState();
   } catch (err) {
     toast(err.message, 'error');
   }
@@ -1722,6 +1724,75 @@ $('backupNow').addEventListener('click', async () => {
     const r = await api('/api/backups', { method: 'POST' });
     toast(`پشتیبان ساخته شد: ${r.name}`, 'ok');
     renderBackups(await api('/api/backups'));
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+});
+
+// ────────────────────────  تلگرام  ────────────────────────
+
+/**
+ * نشان دادن وضعیت ذخیرهٔ توکن.
+ * سرور توکن را هرگز نمی‌فرستد — فقط می‌گوید پر است یا نه — پس این
+ * تنها چیزی است که اینجا قابل نمایش است.
+ */
+function renderTelegramState() {
+  const set = state.settings?.tg_token_set;
+  $('tgTokenState').textContent = set
+    ? 'توکن ذخیره شده است. برای تغییرش، مقدار تازه را وارد و ذخیره کنید.'
+    : 'ذخیره نشده است.';
+  $('tgChat').value = state.settings?.tg_chat_id ?? '';
+}
+
+/** ذخیرهٔ توکن و شناسه، و بعد فرستادن پیام آزمایشی */
+$('tgSave').addEventListener('click', async () => {
+  const token = $('tgToken').value.trim();
+  const chat = $('tgChat').value.trim();
+
+  if (!token && !chat) { toast('توکن و شناسه را وارد کنید.', 'error'); return; }
+  if (!token) { toast('توکن ربات را وارد کنید.', 'error'); return; }
+  if (!chat) { toast('شناسهٔ گفت‌وگو را وارد کنید.', 'error'); return; }
+
+  try {
+    // توکن خالی یعنی «نگه دار»، نه «پاک کن»؛ وگرنه مدیر برای عوض‌کردن
+    // فقط شناسه، ناچار می‌شد توکن را دوباره بگیرد که در دسترسش نیست.
+    await api('/api/settings', {
+      method: 'PUT',
+      body: { tg_token: token, tg_chat_id: chat },
+    });
+
+    state.settings = (await api('/api/settings')).settings;
+    await api('/api/telegram/test', { method: 'POST' });
+
+    $('tgToken').value = '';
+    $('tgTokenState').textContent = 'توکن ذخیره شد و پیام آزمایشی فرستاده شد.';
+    toast('تلگرام تنظیم شد — پیام آزمایشی را ببینید.', 'ok');
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+});
+
+$('tgCheck').addEventListener('click', async () => {
+  const token = $('tgToken').value.trim();
+  if (!token) { toast('توکن را وارد کنید یا اگر ذخیره شده، بگویید بررسی شود.', 'error'); return; }
+  try {
+    // بررسی با توکن واردشده انجام می‌شود و ذخیره نمی‌شود
+    await api('/api/settings', { method: 'PUT', body: { tg_token: token } });
+    const r = await api('/api/telegram/check', { method: 'POST' });
+    toast(`توکن سالم است — ربات: @${r.username}`, 'ok');
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+});
+
+$('tgDiscover').addEventListener('click', async () => {
+  try {
+    const token = $('tgToken').value.trim();
+    // اگر چیزی در کادر نیست، از توکن ذخیره‌شده استفاده می‌شود
+    if (token) await api('/api/settings', { method: 'PUT', body: { tg_token: token } });
+    const r = await api('/api/telegram/discover', { method: 'POST' });
+    $('tgChat').value = r.chatId;
+    toast(`شناسهٔ گفت‌وگوی «${r.title}» خوانده شد. ذخیره کنید.`, 'ok');
   } catch (err) {
     toast(err.message, 'error');
   }
