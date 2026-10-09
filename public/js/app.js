@@ -1359,6 +1359,7 @@ async function loadSettingsView() {
   renderUsers();
   $('dayStart').value = state.settings.day_start;
   $('dayEnd').value = state.settings.day_end;
+  $('complexNameInput').value = state.settings.complex_name ?? '';
   renderBackups(backups);
 }
 
@@ -1652,17 +1653,24 @@ $('saveWork').addEventListener('click', async () => {
     .map((b) => Number(b.dataset.day));
 
   try {
+    // نام مجتمع همین‌جا ذخیره می‌شود و بلافاصله بالای صفحه می‌نشیند؛
+    // وگرنه تا بارگذاری بعدی، متن قدیمی می‌ماند.
+    const complexName = $('complexNameInput').value.trim();
+    if (!complexName) { toast('نام مجتمع نمی‌تواند خالی باشد.', 'error'); return; }
+
     await api('/api/settings', {
       method: 'PUT',
       body: {
         work_days: days.join(','),
         day_start: $('dayStart').value,
         day_end: $('dayEnd').value,
+        complex_name: complexName,
       },
     });
     toast('تنظیمات ذخیره شد', 'ok');
     const s = await api('/api/settings');
     state.settings = s.settings;
+    $('complexName').textContent = s.settings.complex_name;
   } catch (err) {
     toast(err.message, 'error');
   }
