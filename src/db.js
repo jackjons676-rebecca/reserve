@@ -171,7 +171,7 @@ export const DEFAULT_SETTINGS = {
   work_days: '1,2,3,4,5',
   day_start: '08:00',
   day_end: '18:00',
-  complex_name: 'مجتمع سالن همایش‌های بین‌المللی استاد رضا روزبه',
+  complex_name: 'دانشگاه علوم پزشکی زنجان',
 };
 
 export function getSetting(db, key) {

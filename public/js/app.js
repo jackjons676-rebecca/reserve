@@ -450,7 +450,7 @@ async function enterApp() {
     const settings = await api('/api/settings');
     state.settings = settings.settings;
     $('complexName').textContent = state.settings.complex_name
-      || 'مجتمع سالن همایش‌های بین‌المللی استاد رضا روزبه';
+      || 'دانشگاه علوم پزشکی زنجان';
   } else {
     // کاربر عادی نام مجتمع را از پاسخ تقویم می‌گیرد
     const t0 = jalaliFromISO(state.date);
