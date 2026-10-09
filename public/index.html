@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1f6f5c">
+<meta name="description" content="ثبت و پیگیری رزرو سالن‌های مجتمع">
+<title>رزرو سالن‌ها</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="رزرو سالن‌ها">
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+
+<!-- ───────────  صفحه ورود  ─────────── -->
+<div class="gate" id="gate">
+  <div class="gate__card">
+    <div class="gate__logo">◷</div>
+    <h1 class="gate__title" id="gateTitle">ورود به سامانه</h1>
+    <p class="gate__sub" id="gateSub">رمز عبور را وارد کنید</p>
+
+    <form id="gateForm" autocomplete="off">
+      <div class="field">
+        <label class="field__label" for="userInput">نام کاربری</label>
+        <input class="input" id="userInput" type="text" autocomplete="username"
+               maxlength="32" placeholder="نام کاربری" required>
+      </div>
+      <div class="field">
+        <label class="field__label" for="pinInput">رمز عبور</label>
+        <input class="input pin-input" id="pinInput" type="password" inputmode="numeric"
+               pattern="[0-9]*" maxlength="12" placeholder="••••" aria-label="رمز عبور" required>
+      </div>
+      <div class="gate__error" id="gateError" role="alert"></div>
+      <button class="btn btn--primary btn--block" type="submit" id="gateBtn">ورود</button>
+    </form>
+
+    <form id="setupForm" autocomplete="off" hidden>
+      <div class="field">
+        <label class="field__label" for="suFullName">نام و نام خانوادگی شما</label>
+        <input class="input" id="suFullName" type="text" maxlength="60" placeholder="مثلاً صادق بیگلر" required>
+      </div>
+      <div class="field">
+        <label class="field__label" for="suUsername">نام کاربری</label>
+        <input class="input" id="suUsername" type="text" maxlength="32"
+               pattern="[A-Za-z0-9._\-]{3,32}" placeholder="حروف انگلیسی، عدد و نقطه" required>
+      </div>
+      <div class="field">
+        <label class="field__label" for="newPin">رمز عبور (۴ تا ۱۲ رقم)</label>
+        <input class="input pin-input" id="newPin" type="password" inputmode="numeric"
+               pattern="[0-9]*" maxlength="12" required>
+      </div>
+      <div class="field">
+        <label class="field__label" for="newPin2">تکرار رمز عبور</label>
+        <input class="input pin-input" id="newPin2" type="password" inputmode="numeric"
+               pattern="[0-9]*" maxlength="12" required>
+      </div>
+      <div class="gate__error" id="setupError" role="alert"></div>
+      <button class="btn btn--primary btn--block" type="submit">ثبت و ادامه</button>
+    </form>
+  </div>
+</div>
+
+<!-- ───────────  برنامه  ─────────── -->
+<div class="app" id="app">
+  <header class="topbar">
+    <div class="topbar__row">
+      <div class="topbar__title">
+        رزرو سالن‌ها
+        <small id="complexName">مجتمع سالن همایش‌های بین‌المللی استاد رضا روزبه</small>
+      </div>
+      <span class="topbar__user" id="userChip" hidden></span>
+      <button class="icon-btn" id="themeBtn" title="تغییر رنگ" aria-label="تغییر رنگ"
+              aria-haspopup="true" aria-expanded="false">◐</button>
+      <button class="icon-btn" id="refreshBtn" title="به‌روزرسانی" aria-label="به‌روزرسانی">↻</button>
+      <button class="icon-btn" id="lockBtn" title="خروج" aria-label="خروج">⏻</button>
+    </div>
+    <nav class="nav" role="tablist">
+      <button class="nav__btn" role="tab" data-view="today" aria-selected="true">امروز</button>
+      <button class="nav__btn" role="tab" data-view="calendar" aria-selected="false">تقویم</button>
+      <button class="nav__btn nav__btn--admin" role="tab" data-view="reports" aria-selected="false">گزارش</button>
+      <button class="nav__btn nav__btn--admin" role="tab" data-view="settings" aria-selected="false">تنظیمات</button>
+    </nav>
+  </header>
+
+  <main class="page">
+
+    <!-- نمای امروز -->
+    <section class="view is-active" id="view-today">
+      <div class="day-head">
+        <button class="icon-btn" id="prevDay" style="background:var(--card);color:var(--brand);border:1px solid var(--line)" aria-label="روز قبل">›</button>
+        <div class="day-head__title" id="todayTitle">امروز</div>
+        <button class="icon-btn" id="nextDay" style="background:var(--card);color:var(--brand);border:1px solid var(--line)" aria-label="روز بعد">‹</button>
+      </div>
+
+      <div class="card" style="padding:12px">
+        <div style="display:flex;gap:8px;align-items:flex-end">
+          <div style="flex:1">
+            <div class="jdate" id="datePicker" role="group" aria-label="انتخاب تاریخ شمسی">
+              <input type="hidden" id="dpValue">
+              <div class="field">
+                <label class="field__label" for="dpMonth">ماه</label>
+                <select class="select" id="dpMonth"></select>
+              </div>
+              <div class="field">
+                <label class="field__label" for="dpDay">روز</label>
+                <select class="select" id="dpDay"></select>
+              </div>
+              <div class="field">
+                <label class="field__label" for="dpYear">سال</label>
+                <input class="input" id="dpYear" type="number" inputmode="numeric"
+                       min="1300" max="1500" step="1">
+              </div>
+            </div>
+          </div>
+          <button class="btn btn--primary" id="gotoToday">امروز</button>
+        </div>
+      </div>
+
+      <div id="todayStats"></div>
+      <div id="todayBoard"></div>
+
+      <button class="btn btn--primary btn--block" id="newBookingTop" style="margin-top:8px">
+        + ثبت رزرو جدید
+      </button>
+    </section>
+
+    <!-- تقویم -->
+    <section class="view" id="view-calendar">
+      <div class="cal-head">
+        <button class="icon-btn" id="prevMonth" style="background:var(--card);color:var(--brand);border:1px solid var(--line)" aria-label="ماه قبل">›</button>
+        <div class="cal-head__title" id="calTitle">—</div>
+        <button class="icon-btn" id="nextMonth" style="background:var(--card);color:var(--brand);border:1px solid var(--line)" aria-label="ماه بعد">‹</button>
+      </div>
+      <div class="card">
+        <div class="cal-scroll">
+          <table class="cal-grid" id="calGrid"></table>
+        </div>
+        <div class="field__hint" style="margin-top:12px">
+          برای دیدن رزروهای یک روز، روی آن روز بزنید.
+        </div>
+      </div>
+    </section>
+
+    <!-- گزارش -->
+    <section class="view" id="view-reports">
+      <div class="chip-row" style="margin-bottom:14px" id="reportTabs">
+        <button class="chip" data-report="utilization" aria-pressed="true">درصد استفاده</button>
+        <button class="chip" data-report="requester" aria-pressed="false">درخواست‌دهندگان</button>
+        <button class="chip" data-report="peak" aria-pressed="false">ساعت پرتردد</button>
+        <button class="chip" data-report="detail" aria-pressed="false">ریز رزروها</button>
+      </div>
+
+      <div class="cal-head">
+        <button class="icon-btn" id="prevRepMonth" style="background:var(--card);color:var(--brand);border:1px solid var(--line)" aria-label="ماه قبل">›</button>
+        <div class="cal-head__title" id="repMonthTitle">—</div>
+        <button class="icon-btn" id="nextRepMonth" style="background:var(--card);color:var(--brand);border:1px solid var(--line)" aria-label="ماه بعد">‹</button>
+      </div>
+
+      <div id="reportFilters" hidden></div>
+      <div class="card" id="reportCard">
+        <div class="loading">در حال بارگذاری…</div>
+      </div>
+
+      <div style="display:flex;gap:9px">
+        <button class="btn btn--ghost" id="printBtn" style="flex:1">چاپ / PDF</button>
+        <button class="btn btn--primary" id="excelBtn" style="flex:1">خروجی اکسل</button>
+      </div>
+    </section>
+
+    <!-- تنظیمات -->
+    <section class="view" id="view-settings">
+      <div class="card">
+        <div class="card__head"><h2 class="card__title">سالن‌ها</h2></div>
+        <div class="field__hint" style="margin-bottom:12px">
+          نام و ظرفیت هر سالن را ویرایش کنید. سالنی که رزرو فعال دارد قابل حذف نیست.
+        </div>
+        <div id="hallsEditor"></div>
+        <button class="btn btn--ghost btn--block" id="addHall">+ افزودن سالن</button>
+        <button class="btn btn--primary btn--block" id="saveHalls" style="margin-top:10px">ذخیره سالن‌ها</button>
+      </div>
+
+      <div class="card" id="kindsCard">
+        <div class="card__head"><h2 class="card__title">انواع مراسم</h2></div>
+        <div class="field__hint" style="margin-bottom:12px">
+          نام انواع مراسم را ویرایش کنید یا نوع تازه اضافه کنید.
+          نوعی که رزرو فعال دارد و نوع «سایر» حذف نمی‌شوند.
+        </div>
+        <div id="kindsEditor"></div>
+        <button class="btn btn--ghost btn--block" id="addKind">+ افزودن نوع</button>
+        <button class="btn btn--primary btn--block" id="saveKinds" style="margin-top:10px">ذخیره انواع</button>
+      </div>
+
+      <div class="card">
+        <div class="card__head"><h2 class="card__title">ساعات و روزهای کاری</h2></div>
+        <div class="field__hint" style="margin-bottom:12px">
+          مبنای محاسبه «درصد استفاده» در گزارش‌ها.
+        </div>
+
+        <div class="field">
+          <label class="field__label">روزهای کاری</label>
+          <div class="chip-row" id="workDays"></div>
+        </div>
+
+        <div class="row-2">
+          <div class="field">
+            <label class="field__label" for="dayStart">ساعت شروع</label>
+            <input class="input" type="time" id="dayStart">
+          </div>
+          <div class="field">
+            <label class="field__label" for="dayEnd">ساعت پایان</label>
+            <input class="input" type="time" id="dayEnd">
+          </div>
+        </div>
+
+        <button class="btn btn--primary btn--block" id="saveWork">ذخیره تنظیمات</button>
+      </div>
+
+      <div class="card" id="usersCard">
+        <div class="card__head"><h2 class="card__title">کاربران</h2></div>
+        <div class="field__hint" style="margin-bottom:12px">
+          هر رزرو ثبت‌شده به نام کاربرش ثبت می‌شود. مدیر همه‌چیز را می‌بیند؛
+          کاربر فقط رزرو ثبت و ویرایش می‌کند.
+        </div>
+        <div id="usersEditor"></div>
+
+        <details style="margin-top:14px">
+          <summary class="btn btn--ghost btn--block" style="cursor:pointer">+ افزودن کاربر</summary>
+          <div style="margin-top:12px">
+            <div class="field">
+              <label class="field__label" for="nuFullName">نام و نام خانوادگی</label>
+              <input class="input" id="nuFullName" type="text" maxlength="60">
+            </div>
+            <div class="row-2">
+              <div class="field">
+                <label class="field__label" for="nuUsername">نام کاربری</label>
+                <input class="input" id="nuUsername" type="text" maxlength="32"
+                       pattern="[A-Za-z0-9._\-]{3,32}" placeholder="حروف انگلیسی">
+              </div>
+              <div class="field">
+                <label class="field__label" for="nuRole">نقش</label>
+                <select class="select" id="nuRole">
+                  <option value="user">کاربر</option>
+                  <option value="admin">مدیر</option>
+                </select>
+              </div>
+            </div>
+            <div class="field__hint" style="margin-bottom:10px" id="nuRoleHint"></div>
+            <div class="field">
+              <label class="field__label" for="nuPin">رمز عبور (۴ تا ۱۲ رقم)</label>
+              <input class="input pin-input" id="nuPin" type="password" inputmode="numeric" maxlength="12">
+            </div>
+            <div class="gate__error" id="nuError" role="alert"></div>
+            <button class="btn btn--primary btn--block" id="addUser">افزودن کاربر</button>
+          </div>
+        </details>
+      </div>
+
+      <div class="card" id="pinCard">
+        <div class="card__head"><h2 class="card__title">رمز عبور شما</h2></div>
+        <div class="row-2">
+          <div class="field">
+            <label class="field__label" for="pinA">رمز جدید</label>
+            <input class="input" type="password" inputmode="numeric" id="pinA" maxlength="12">
+          </div>
+          <div class="field">
+            <label class="field__label" for="pinB">تکرار رمز</label>
+            <input class="input" type="password" inputmode="numeric" id="pinB" maxlength="12">
+          </div>
+        </div>
+        <button class="btn btn--ghost btn--block" id="savePin">تغییر رمز عبور</button>
+      </div>
+
+      <div class="card">
+        <div class="card__head"><h2 class="card__title">پشتیبان‌گیری</h2></div>
+        <div class="field__hint" style="margin-bottom:12px">
+          هر روز به‌طور خودکار یک نسخه پشتیبان ساخته می‌شود.
+          حداکثر ۳۰ نسخه نگه داشته می‌شود و قدیمی‌ها خودکار حذف می‌شوند.
+        </div>
+        <div id="backupList"></div>
+        <button class="btn btn--primary btn--block" id="backupNow" style="margin-top:10px">
+          ساخت پشتیبان همین حالا
+        </button>
+
+        <details style="margin-top:14px">
+          <summary class="btn btn--ghost btn--block" style="cursor:pointer">بازگردانی از فایل پشتیبان</summary>
+          <div style="margin-top:12px">
+            <div class="field__hint" style="margin-bottom:10px">
+              پیش از بازگردانی، از اطلاعات فعلی یک پشتیبان خودکار گرفته می‌شود.
+              پس از بازگردانی باید سرویس دوباره راه‌اندازی شود.
+            </div>
+            <input type="file" id="restoreFile" accept=".db,application/octet-stream"
+                   class="input" style="padding:8px">
+            <div class="gate__error" id="restoreError" role="alert"></div>
+            <button class="btn btn--ghost btn--block" id="restoreNow" style="margin-top:10px">
+              بازگردانی
+            </button>
+          </div>
+        </details>
+      </div>
+
+      <div class="card">
+        <div class="card__head"><h2 class="card__title">درباره</h2></div>
+        <p style="margin:0;color:var(--ink-soft);font-size:13.5px">
+          سامانه رزرو سالن‌های مجتمع — نسخه ۲٫۰<br>
+          همه رزروها روی همین سرور نگهداری می‌شود و هر روز پشتیبان‌گیری می‌شود.
+        </p>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<!-- ───────────  پنجره رزرو  ─────────── -->
+<div class="modal" id="bookingModal">
+  <div class="modal__panel">
+    <div class="modal__head">
+      <h3 class="modal__title" id="bookingTitle">ثبت رزرو جدید</h3>
+      <button class="icon-btn" id="bookingClose" style="background:#eef1f0;color:var(--ink)" aria-label="بستن">✕</button>
+    </div>
+    <div class="modal__body">
+      <div id="bookingErrors"></div>
+
+      <!-- دکمهٔ ثبت بالای فرم است تا بدون اسکرول و پیمایش پایین، در دسترس باشد -->
+      <div class="form-actions">
+        <button class="btn btn--primary btn--block" id="bookingSave" type="button">ثبت رزرو</button>
+        <button class="btn btn--ghost btn--block" id="bookingCancel" type="button">انصراف</button>
+      </div>
+
+      <form id="bookingForm">
+        <input type="hidden" id="bkId">
+
+        <div class="field">
+          <label class="field__label" for="bkHall">سالن</label>
+          <select class="select" id="bkHall" required></select>
+        </div>
+
+        <div class="row-2">
+          <div class="field">
+            <label class="field__label">تاریخ (شمسی)</label>
+            <div class="jdate" id="bkDate" role="group" aria-label="انتخاب تاریخ شمسی">
+              <input type="hidden" id="bkValue">
+              <div class="field">
+                <label class="field__label" for="bkMonth">ماه</label>
+                <select class="select" id="bkMonth"></select>
+              </div>
+              <div class="field">
+                <label class="field__label" for="bkDay">روز</label>
+                <select class="select" id="bkDay"></select>
+              </div>
+              <div class="field">
+                <label class="field__label" for="bkYear">سال</label>
+                <input class="input" id="bkYear" type="number" inputmode="numeric"
+                       min="1300" max="1500" step="1">
+              </div>
+            </div>
+            <div class="field__hint" id="bkDateHint"></div>
+          </div>
+          <div class="field">
+            <label class="field__label" for="bkKind">نوع مراسم</label>
+            <!-- گزینه‌ها از جدول انواع مراسم پر می‌شود، پس ثابت نیستند:
+                 مدیر می‌تواند در تنظیمات نوع تازه بسازد -->
+            <select class="select" id="bkKind"></select>
+          </div>
+        </div>
+
+        <div class="row-2">
+          <div class="field">
+            <label class="field__label" for="bkStart">از ساعت</label>
+            <input class="input" type="time" id="bkStart" step="900" required>
+          </div>
+          <div class="field">
+            <label class="field__label" for="bkEnd">تا ساعت</label>
+            <input class="input" type="time" id="bkEnd" step="900" required>
+          </div>
+        </div>
+
+        <div class="field">
+          <label class="field__label" for="bkTitle">عنوان مراسم</label>
+          <input class="input" id="bkTitle" maxlength="200" placeholder="مثلاً: جلسه شورای دانشکده" required>
+        </div>
+
+        <div class="row-2">
+          <div class="field">
+            <label class="field__label" for="bkRequester">درخواست‌دهنده</label>
+            <input class="input" id="bkRequester" list="requesterList" maxlength="100" required>
+            <datalist id="requesterList"></datalist>
+          </div>
+          <div class="field">
+            <label class="field__label" for="bkPhone">شماره تماس</label>
+            <input class="input" id="bkPhone" inputmode="tel" maxlength="20">
+          </div>
+        </div>
+
+        <div class="field">
+          <label class="field__label" for="bkAttendees">تعداد حاضران</label>
+          <input class="input" type="number" id="bkAttendees" min="0" step="1" placeholder="اختیاری">
+        </div>
+
+        <div class="field">
+          <label class="field__label" for="bkNotes">توضیحات</label>
+          <textarea class="textarea" id="bkNotes" maxlength="500" placeholder="اختیاری"></textarea>
+        </div>
+      </form>
+
+      <div id="dayPeek" style="margin-top:4px"></div>
+    </div>
+    <div class="modal__foot">
+      <span class="field__hint">پس از ثبت، رزرو در تقویم نمایش داده می‌شود.</span>
+    </div>
+  </div>
+</div>
+
+<!-- ───────────  پنجره جزئیات  ─────────── -->
+<div class="modal" id="detailModal">
+  <div class="modal__panel">
+    <div class="modal__head">
+      <h3 class="modal__title" id="detailTitle">جزئیات رزرو</h3>
+      <button class="icon-btn" id="detailClose" style="background:#eef1f0;color:var(--ink)" aria-label="بستن">✕</button>
+    </div>
+    <div class="modal__body" id="detailBody"></div>
+    <div class="modal__foot">
+      <button class="btn btn--ghost" id="detailEdit">ویرایش</button>
+      <button class="btn btn--danger" id="detailNext">لغو رزرو</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<!-- انتخاب پوسته — با دکمهٔ ◐ در نوار بالا باز می‌شود -->
+<div class="theme-pop" id="themePop" hidden>
+  <div class="theme-pop__title">رنگ سامانه</div>
+  <div class="theme-pop__grid" id="themeList"></div>
+</div>
+
+<!-- خطاهای جاوااسکریپت بی‌صدا از بین می‌روند؛ این پنل آن‌ها را نشان می‌دهد
+     تا به‌جای «دکمه کار نمی‌کند»، دلیل واقعی دیده شود. با کلیک بسته می‌شود. -->
+<div class="diag" id="diagBox" hidden>
+  <div class="diag__head">خطاهای صفحه</div>
+  <div class="diag__list" id="diagList"></div>
+  <button class="diag__close" id="diagClose" type="button">بستن</button>
+</div>
+
+<script type="module" src="/js/app.js"></script>
+</body>
+</html>
